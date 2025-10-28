@@ -3,10 +3,8 @@ pipeline {
 
     environment {
         DOCKERHUB_USER = 'justhushh'
-        // Добавляем ~/.local/bin в PATH
-        PATH = "$HOME/.local/bin:$PATH"
-        // Для Docker (если в контейнере)
-        DOCKER_HOST = 'unix:///var/run/docker.sock'
+        IMAGE_NAME = "${DOCKERHUB_USER}/research_project_ASDP"
+        IMAGE_TAG = 'latest'
     }
 
     stages {
@@ -16,27 +14,30 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Setup Python Virtual Environment') {
             steps {
                 sh '''
-                    python3 -m pip install --upgrade pip --user
-                    python3 -m pip install -r requirements.txt --user
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
                 '''
             }
         }
 
         stage('Run Tests') {
             steps {
-                // Теперь pytest будет найден
-                sh 'pytest --maxfail=1 --disable-warnings -q || true'
+                sh '''
+                    . venv/bin/activate
+                    pytest --maxfail=1 --disable-warnings -q || true
+                '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Используем docker из PATH
-                    def image = docker.build("${DOCKERHUB_USER}/research_project_ASDP:latest")
+                    docker.build("${IMAGE_NAME}:${IMAGE_TAG}")
                 }
             }
         }
@@ -46,7 +47,7 @@ pipeline {
                 withCredentials([string(credentialsId: 'dockerhub_token', variable: 'DOCKERHUB_TOKEN')]) {
                     sh '''
                         echo "$DOCKERHUB_TOKEN" | docker login -u ${DOCKERHUB_USER} --password-stdin
-                        docker push ${DOCKERHUB_USER}/research_project_ASDP:latest
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
@@ -54,15 +55,17 @@ pipeline {
     }
 
     post {
-        failure {
-            echo 'Pipeline failed!'
+        always {
+            sh '''
+                docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true
+                rm -rf venv
+            '''
         }
         success {
             echo 'Pipeline completed successfully!'
         }
-        always {
-            // Опционально: очистка
-            sh 'docker rmi ${DOCKERHUB_USER}/research_project_ASDP:latest || true'
+        failure {
+            echo 'Pipeline failed!'
         }
     }
 }
