@@ -3,6 +3,10 @@ pipeline {
 
     environment {
         DOCKERHUB_USER = 'justhushh'
+        // Добавляем ~/.local/bin в PATH
+        PATH = "$HOME/.local/bin:$PATH"
+        // Для Docker (если в контейнере)
+        DOCKER_HOST = 'unix:///var/run/docker.sock'
     }
 
     stages {
@@ -12,18 +16,18 @@ pipeline {
             }
         }
 
-    stage('Install Dependencies') {
-        steps {
-            sh '''
-                python3 -m pip install --upgrade pip --break-system-packages
-                python3 -m pip install -r requirements.txt --break-system-packages
-            '''
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    python3 -m pip install --upgrade pip --user
+                    python3 -m pip install -r requirements.txt --user
+                '''
+            }
         }
-    }
-
 
         stage('Run Tests') {
             steps {
+                // Теперь pytest будет найден
                 sh 'pytest --maxfail=1 --disable-warnings -q || true'
             }
         }
@@ -31,7 +35,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    docker.build("${DOCKERHUB_USER}/research_project_ASDP:latest")
+                    // Используем docker из PATH
+                    def image = docker.build("${DOCKERHUB_USER}/research_project_ASDP:latest")
                 }
             }
         }
@@ -54,6 +59,10 @@ pipeline {
         }
         success {
             echo 'Pipeline completed successfully!'
+        }
+        always {
+            // Опционально: очистка
+            sh 'docker rmi ${DOCKERHUB_USER}/research_project_ASDP:latest || true'
         }
     }
 }
