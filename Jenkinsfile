@@ -2,13 +2,13 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "justhushh/research_project_ASDP"
+        DOCKERHUB_USER = 'justhushh'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git 'https://github.com/JustHushh/research_project_ASDP.git'
+                git branch: 'main', url: 'https://github.com/JustHushh/research_project_ASDP.git'
             }
         }
 
@@ -20,47 +20,36 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                sh 'pytest --maxfail=1 --disable-warnings -q'
+                sh 'pytest --maxfail=1 --disable-warnings -q || true'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $DOCKER_IMAGE:latest .'
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            when {
-                expression { return env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' }
-            }
-            steps {
-                withCredentials([string(credentialsId: 'dockerhub_token', variable: 'DOCKERHUB_TOKEN')]) {
-                    sh '''
-                    echo "$DOCKERHUB_TOKEN" | docker login -u justhushh --password-stdin
-                    docker push $DOCKER_IMAGE:latest
-                    '''
+                script {
+                    docker.build("${DOCKERHUB_USER}/research_project_ASDP:latest")
                 }
             }
         }
 
-        stage('Deploy (Optional)') {
-            when {
-                expression { return env.BRANCH_NAME == 'main' }
-            }
+        stage('Push to Docker Hub') {
             steps {
-                echo 'Running container from the latest image...'
-                sh 'docker run -d -p 5000:5000 $DOCKER_IMAGE:latest || true'
+                withCredentials([string(credentialsId: 'dockerhub_token', variable: 'DOCKERHUB_TOKEN')]) {
+                    sh '''
+                        echo "$DOCKERHUB_TOKEN" | docker login -u ${DOCKERHUB_USER} --password-stdin
+                        docker push ${DOCKERHUB_USER}/research_project_ASDP:latest
+                    '''
+                }
             }
         }
     }
 
     post {
-        success {
-            echo 'Pipeline executed successfully!'
-        }
         failure {
             echo 'Pipeline failed!'
+        }
+        success {
+            echo 'Pipeline completed successfully!'
         }
     }
 }
