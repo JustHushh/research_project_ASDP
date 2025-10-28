@@ -16,7 +16,6 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 echo 'Installing Python dependencies...'
-                // обходим PEP 668 и обновляем pip
                 sh '''
                     python3 -m pip install --upgrade pip --break-system-packages
                     python3 -m pip install -r requirements.txt --break-system-packages
@@ -33,21 +32,23 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                echo 'Building Docker image...'
-                script {
-                    docker.build("${DOCKERHUB_USER}/research_project_ASDP:latest")
+        // ⚡ Самое важное: используем Docker CLI внутри docker-агента
+        stage('Build and Push Docker Image') {
+            agent {
+                docker {
+                    image 'docker:27.0.3' // образ с Docker CLI
+                    args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
                 }
             }
-        }
-
-        stage('Push to Docker Hub') {
+            environment {
+                DOCKER_CLI_HINTS = 'false'
+            }
             steps {
-                echo 'Pushing image to Docker Hub...'
+                echo 'Building and pushing Docker image...'
                 withCredentials([string(credentialsId: 'dockerhub_token', variable: 'DOCKERHUB_TOKEN')]) {
                     sh '''
                         echo "$DOCKERHUB_TOKEN" | docker login -u ${DOCKERHUB_USER} --password-stdin
+                        docker build -t ${DOCKERHUB_USER}/research_project_ASDP:latest .
                         docker push ${DOCKERHUB_USER}/research_project_ASDP:latest
                     '''
                 }
