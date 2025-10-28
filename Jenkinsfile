@@ -2,66 +2,68 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER = 'justhushh'
+        DOCKERHUB_CREDENTIALS = credentials('docker-hub-credentials')  // ID твоего секрета
+        IMAGE_NAME = "justhushh/research_project_asdp"
+        TAG = "latest"
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                echo '🔹 Cloning repository...'
+                echo "📦 Cloning repository..."
                 git branch: 'main', url: 'https://github.com/JustHushh/research_project_ASDP.git'
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Set up Python environment') {
             steps {
-                echo '🔹 Installing Python dependencies...'
+                echo "🐍 Setting up Python virtual environment..."
                 sh '''
-                    python3 -m pip install --upgrade pip --break-system-packages
-                    python3 -m pip install -r requirements.txt --break-system-packages
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    python3 -m pip install --upgrade pip
+                    pip install -r requirements.txt
                 '''
             }
         }
 
         stage('Run Tests') {
             steps {
-                echo '🔹 Running tests...'
+                echo "🧪 Running tests..."
                 sh '''
-                    python3 -m pytest --maxfail=1 --disable-warnings -q || true
+                    . venv/bin/activate
+                    pytest --maxfail=1 --disable-warnings -q
                 '''
             }
         }
 
-        // 🐳 Docker build and push handled inside docker:27 container
-        stage('Build and Push Docker Image') {
-            agent {
-                docker {
-                    image 'docker:27.0.3' // Docker CLI container
-                    args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
-                }
-            }
-            environment {
-                DOCKER_CLI_HINTS = 'false'
-            }
+        stage('Build Docker Image') {
             steps {
-                echo '🔹 Building and pushing Docker image...'
-                withCredentials([string(credentialsId: 'dockerhub_token', variable: 'DOCKERHUB_TOKEN')]) {
-                    sh '''
-                        echo "$DOCKERHUB_TOKEN" | docker login -u ${DOCKERHUB_USER} --password-stdin
-                        docker build -t ${DOCKERHUB_USER}/research_project_ASDP:latest .
-                        docker push ${DOCKERHUB_USER}/research_project_ASDP:latest
-                    '''
-                }
+                echo "🐳 Building Docker image..."
+                sh '''
+                    docker build -t $IMAGE_NAME:$TAG .
+                '''
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                echo "🚀 Pushing Docker image to Docker Hub..."
+                sh '''
+                    echo "$DOCKERHUB_CREDENTIALS_PSW" | docker login -u "$DOCKERHUB_CREDENTIALS_USR" --password-stdin
+                    docker push $IMAGE_NAME:$TAG
+                '''
             }
         }
     }
 
     post {
         success {
-            echo '✅ Pipeline completed successfully — Image pushed to Docker Hub!'
+            echo "✅ Pipeline completed successfully!"
         }
         failure {
-            echo '❌ Pipeline failed! Check logs for details.'
+            echo "❌ Pipeline failed! Check logs for details."
         }
     }
 }
